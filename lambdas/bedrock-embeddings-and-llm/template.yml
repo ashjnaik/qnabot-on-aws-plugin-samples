@@ -28,8 +28,38 @@ Parameters:
       - meta.llama2-70b-chat-v1
     Description: Bedrock LLM ModelId
 
-Resources:
+  StreamingDynamoDbTable:
+    Type: String
+    Default: ""
+    Description: The name of the DynamoDB table for streaming data from LexWebUI stack if 'AllowStreaming option was set"
 
+  StreamingWebSocketEndpoint:
+    Type: String
+    Default: ""
+    Description: The endpoint URL of the API Gateway WebSocket for streaming from LexWebUI stack if 'AllowStreaming' option was set
+
+Conditions:
+  StreamingEnabled:
+    Fn::Or:
+      - Fn::And:
+          - Fn::Not:
+              - Fn::Equals:
+                  - Ref: StreamingDynamoDbTable
+                  - ""
+          - Fn::Not:
+              - Fn::Equals:
+                  - Ref: StreamingWebSocketEndpoint
+                  - ""
+      - Fn::And:
+        - Fn::Equals:
+          - Ref: StreamingDynamoDbTable
+          - ""
+        - Fn::Equals:
+              - Ref: StreamingWebSocketEndpoint
+              - ""
+
+
+Resources:
   BedrockBoto3Bucket:
     Type: AWS::S3::Bucket
     Properties:
@@ -218,6 +248,7 @@ Resources:
         Variables:
           DEFAULT_MODEL_ID: !Ref EmbeddingsModelId
           EMBEDDING_MAX_WORDS: 6000 
+          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
       Code: ./src
     Metadata:
       cfn_nag:
@@ -237,6 +268,9 @@ Resources:
         - !Ref BedrockBoto3Layer
       Timeout: 60
       MemorySize: 128
+      Environment:
+        Variables:
+          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
       Code: ./src
     Metadata:
       cfn_nag:
@@ -256,6 +290,10 @@ Resources:
       Runtime: python3.11
       Timeout: 60
       MemorySize: 128
+      Environment:
+        Variables:
+          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
+      
       Layers: 
         - !Ref BedrockBoto3Layer
       Code: ./src
@@ -315,6 +353,9 @@ Resources:
         - !Ref BedrockBoto3Layer
       Timeout: 60
       MemorySize: 128
+      Environment:
+        Variables:
+          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
       Code: ./src
     Metadata:
       cfn_nag:
