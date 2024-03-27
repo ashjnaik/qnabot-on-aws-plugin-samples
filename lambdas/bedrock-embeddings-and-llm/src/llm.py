@@ -7,6 +7,7 @@ DEFAULT_MODEL_ID = os.environ.get("DEFAULT_MODEL_ID","anthropic.claude-instant-v
 AWS_REGION = os.environ["AWS_REGION_OVERRIDE"] if "AWS_REGION_OVERRIDE" in os.environ else os.environ["AWS_REGION"]
 ENDPOINT_URL = os.environ.get("ENDPOINT_URL", f'https://bedrock-runtime.{AWS_REGION}.amazonaws.com')
 DEFAULT_MAX_TOKENS = 256
+STREAMING_ENABLED = os.environ.get("STREAMING_ENABLED") or "false"
 
 # global variables - avoid creating a new client for every request
 client = None
@@ -95,7 +96,11 @@ def call_llm(parameters, prompt):
     print("ModelId", modelId, "-  Body: ", body)
     if (client is None):
         client = get_client()
-    response = client.invoke_model(body=json.dumps(body), modelId=modelId, accept='application/json', contentType='application/json')
+    #  check if streaming is enabled, if so, use invoke_model_with_response_stream()
+    if STREAMING_ENABLED == "true":
+        response = client.invoke_model_with_response_stream(body=body, modelId=modelId, accept='application/json', contentType='application/json')
+    else:
+        response = client.invoke_model(body=body, modelId=modelId, accept='application/json', contentType='application/json')
     generated_text = get_generate_text(modelId, response)
     return generated_text
 
