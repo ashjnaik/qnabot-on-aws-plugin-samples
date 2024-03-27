@@ -31,12 +31,12 @@ Parameters:
   StreamingDynamoDbTable:
     Type: String
     Default: ""
-    Description: The name of the DynamoDB table for streaming data from LexWebUI stack if 'AllowStreaming option was set"
+    Description: The name of the DynamoDB table for streaming data from the LexWebUI stack if 'AllowStreamingResponses' parameter was set
 
   StreamingWebSocketEndpoint:
     Type: String
     Default: ""
-    Description: The endpoint URL of the API Gateway WebSocket for streaming from LexWebUI stack if 'AllowStreaming' option was set
+    Description: The endpoint URL of the API Gateway WebSocket for streaming from the LexWebUI stack if the 'AllowStreamingResponses' parameter was set
 
 Conditions:
   StreamingEnabled:
