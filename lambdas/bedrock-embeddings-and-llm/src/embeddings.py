@@ -43,7 +43,6 @@ def lambda_handler(event, context):
     body = json.dumps({"inputText": text})
     if (client is None):
         client = get_client()
-    #  check if streaming is enabled, if so, use invoke_model_with_response_stream()
     if STREAMING_ENABLED == "true":
         response = client.invoke_model_with_response_stream(body=body, modelId=modelId, accept='application/json', contentType='application/json')
     else:
