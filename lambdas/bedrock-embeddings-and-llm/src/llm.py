@@ -7,12 +7,15 @@ DEFAULT_MODEL_ID = os.environ.get("DEFAULT_MODEL_ID","anthropic.claude-instant-v
 AWS_REGION = os.environ["AWS_REGION_OVERRIDE"] if "AWS_REGION_OVERRIDE" in os.environ else os.environ["AWS_REGION"]
 ENDPOINT_URL = os.environ.get("ENDPOINT_URL", f'https://bedrock-runtime.{AWS_REGION}.amazonaws.com')
 DEFAULT_MAX_TOKENS = 256
-STREAMING_ENABLED = os.environ.get("STREAMING_ENABLED") or "false"
+STREAMING_ENABLED = os.environ["STREAMING_ENABLED"]
+accept = "application/json"
+contentType = "application/json"
 
 # global variables - avoid creating a new client for every request
-client = None
+bedrock_client = None
+dynamodb_client = boto3.resource('dynamodb')
 
-def get_client():
+def get_bedrock_client():
     print("Connecting to Bedrock Service: ", ENDPOINT_URL)
     client = boto3.client(service_name='bedrock-runtime', region_name=AWS_REGION, endpoint_url=ENDPOINT_URL)
     return client
@@ -66,6 +69,30 @@ def get_request_body(modelId, parameters, prompt):
         raise Exception("Unsupported provider: ", provider)
     return request_body
 
+def close(intent_request, fulfillment_state, message):
+    intent_request['sessionState']['intent']['state'] = fulfillment_state
+
+    return {
+        'sessionState': {
+            'dialogAction': {
+                'type': 'Close'
+            },
+            'intent': intent_request['sessionState']['intent']
+        },
+        'messages': [message],
+        'sessionId': intent_request['sessionId'],
+        'requestAttributes': intent_request['requestAttributes'] if 'requestAttributes' in intent_request else None
+    }
+
+def get_session_attributes(intent_request):
+    print(intent_request)
+    sessionState = intent_request['sessionState']
+    if 'sessionAttributes' in sessionState:
+        print('Session Attributes', sessionState['sessionAttributes'])
+        return sessionState['sessionAttributes']
+
+    return {}
+
 def get_generate_text(modelId, response):
     provider = modelId.split(".")[0]
     generated_text = None
@@ -89,19 +116,61 @@ def get_generate_text(modelId, response):
         raise Exception("Unsupported provider: ", provider)
     return generated_text
 
-def call_llm(parameters, prompt):
-    global client
+def call_llm(parameters, prompt, event):
+    global bedrock_client
+
+    sessionId = event['sessionId']
+    sessionAttributes = get_session_attributes(event)
+
     modelId = parameters.pop("modelId", DEFAULT_MODEL_ID)
     body = get_request_body(modelId, parameters, prompt)
     print("ModelId", modelId, "-  Body: ", body)
-    if (client is None):
-        client = get_client()
-    if STREAMING_ENABLED == "true":
-        response = client.invoke_model_with_response_stream(body=body, modelId=modelId, accept='application/json', contentType='application/json')
+    
+    if (bedrock_client is None):
+        bedrock_client = get_bedrock_client()
+    
+    fullreply = '';
+
+    if STREAMING_ENABLED and (hasattr(sessionAttributes, 'streamingDynamoDbTable') and hasattr(sessionAttributes, 'streamingEndpoint')):
+        apigatewaymanagementapi = boto3.client(
+            'apigatewaymanagementapi', 
+            endpoint_url = sessionAttributes['streamingEndpoint']
+        )
+            
+        wstable = dynamodb_client.Table(sessionAttributes['streamingDynamoDbTable'])
+        db_response = wstable.get_item(Key={'sessionId': sessionId})
+        print (db_response)
+        connectionId = db_response['Item']['connectionId']
+        print('Get ConnectionID ', connectionId)
+
+        response = bedrock_client.invoke_model_with_response_stream(
+            body=body, modelId=modelId, accept=accept, contentType=contentType
+        )
+        stream = response.get('body')
+
+        if stream:
+            for streamEvent in stream:
+                chunk = streamEvent.get('chunk')
+                if chunk:
+                    chunk_obj = json.loads(chunk.get('bytes').decode())
+                    text = chunk_obj['completion']
+                    fullreply = fullreply + text
+                    print("chunk text sent back to the client: ",text);
+                    response = apigatewaymanagementapi.post_to_connection(
+                        Data=text,
+                        ConnectionId=connectionId)
+                    
+        message = {
+            'contentType': 'CustomPayload',
+            'content': fullreply
+        }
+        fulfillment_state = "Fulfilled"
+    
+        return close(event, fulfillment_state, message)
     else:
-        response = client.invoke_model(body=body, modelId=modelId, accept='application/json', contentType='application/json')
-    generated_text = get_generate_text(modelId, response)
-    return generated_text
+        response = bedrock_client.invoke_model(body=body, modelId=modelId, accept=accept, contentType=contentType)
+        generated_text = get_generate_text(modelId, response)
+        return generated_text
 
 
 """
@@ -119,8 +188,9 @@ For supported parameters for each provider model, see Bedrock docs: https://us-e
 def lambda_handler(event, context):
     print("Event: ", json.dumps(event))
     prompt = event["prompt"]
+    
     parameters = event["parameters"] 
-    generated_text = call_llm(parameters, prompt)
+    generated_text = call_llm(parameters, prompt, event)
     print("Result:", json.dumps(generated_text))
     return {
         'generated_text': generated_text

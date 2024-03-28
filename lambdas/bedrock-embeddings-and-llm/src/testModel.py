@@ -4,7 +4,6 @@ import os
 import cfnresponse
 import llm
 
-STREAMING_ENABLED = os.environ.get("STREAMING_ENABLED") or "false"
 """
 Example Test Event:
 {
@@ -32,10 +31,7 @@ def lambda_handler(event, context):
             modelId = embeddingsModelId        
             body = json.dumps({"inputText": prompt})
             print(f"Testing {modelId} - {body}")
-            if STREAMING_ENABLED == "true":
-              client.invoke_model_with_response_stream(body=body, modelId=modelId, accept='application/json', contentType='application/json')
-            else:
-              client.invoke_model(body=body, modelId=modelId, accept='application/json', contentType='application/json')
+            client.invoke_model(body=body, modelId=modelId, accept='application/json', contentType='application/json')
             # Test LLMModel
             modelId = llmModelId
             parameters = {
