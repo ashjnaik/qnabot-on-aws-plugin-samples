@@ -1,8 +1,21 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: QnABot on AWS LLM Plugin for Bedrock - v0.1.15
 
-Parameters:
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: 'Streaming Configuration'
+        Parameters:
+          - StreamingDynamoDbTable
+          - StreamingWebSocketEndpoint
+    ParameterLabels:
+      StreamingDynamoDbTable:
+        default: 'The name of the DynamoDB table for streaming data from the LexWebUI stack'
+      StreamingWebSocketEndpointId:
+        default: 'WebSocket Endpoint connectionID from the Lex Web UI stack'
 
+Parameters:
   EmbeddingsModelId:
     Type: String
     Default: amazon.titan-embed-text-v1
@@ -27,18 +40,36 @@ Parameters:
       - meta.llama2-13b-chat-v1
       - meta.llama2-70b-chat-v1
     Description: Bedrock LLM ModelId
-
-  StreamingEnabled:
+  
+  StreamingDynamoDbTable:
     Type: String
-    Default: "false"
-    AllowedValues: 
-      - "true"
-      - "false"
-    Description: Set true if the 'AllowStreamingResponses' parameter was set in the LexWebUI Stack
+    Default: ""
+    Description: The name of the DynamoDB table for streaming data from the LexWebUI stack if the 'AllowStreamingResponses' parameter was set
+
+  StreamingWebSocketEndpointId:
+    Type: String
+    Default: ""
+    Description: The connection ID of the API Gateway WebSocket for streaming from the LexWebUI stack if the 'AllowStreaming' parameter was set
 
 Conditions:
-
-  IsStreamingEnabled: !Equals [!Ref StreamingEnabled, "true"]
+  StreamingEnabled:
+    Fn::Or:
+      - Fn::And:
+          - Fn::Not:
+              - Fn::Equals:
+                  - Ref: StreamingDynamoDbTable
+                  - ""
+          - Fn::Not:
+              - Fn::Equals:
+                  - Ref: StreamingWebSocketEndpointId
+                  - ""
+      - Fn::And:
+        - Fn::Equals:
+          - Ref: StreamingDynamoDbTable
+          - ""
+        - Fn::Equals:
+              - Ref: StreamingWebSocketEndpointId
+              - ""
 
 Resources:
   BedrockBoto3Bucket:
@@ -205,15 +236,38 @@ Resources:
         - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
       Policies:
         - PolicyDocument:
-            Version: 2012-10-17
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action:
                   - "bedrock:InvokeModel"
+                  - "bedrock:InvokeModelWithResponseStream"
                 Resource:
                   - !Sub "arn:${AWS::Partition}:bedrock:*::foundation-model/*"
                   - !Sub "arn:${AWS::Partition}:bedrock:*:${AWS::AccountId}:custom-model/*"
           PolicyName: BedrockPolicy
+        - PolicyDocument:
+            Version: '2012-10-17'
+            Statement: 
+              - Effect: Allow
+                Action:
+                  - "dynamodb:GetItem"
+                  - "dynamodb:Describe*"
+                  - "dynamodb:List*"
+                Resource: !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${StreamingDynamoDbTable}"
+          PolicyName: DynamoDBPolicy
+        - PolicyDocument: 
+            Version: '2012-10-17'
+            Statement: 
+              - Effect: Allow
+                Action:
+                  - "execute-api:ManageConnections"
+                  - "execute-api:Invoke"
+                Resource: 
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/*"
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/Prod/POST/@connections/*"
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/Prod/GET/@connections/*"
+          PolicyName: WebSocketPolicy    
 
   EmbeddingsLambdaFunction:
     Type: AWS::Lambda::Function
@@ -250,7 +304,7 @@ Resources:
       MemorySize: 128
       Environment:
         Variables:
-          STREAMING_ENABLED: !If [IsStreamingEnabled, "true", "false"]
+          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
       Code: ./src
     Metadata:
       cfn_nag:
@@ -398,3 +452,7 @@ Outputs:
   QnAItemLambdaHookArgs:
     Description: QnA Item Lambda Hook Args (use with no_hits item for optional ask-the-LLM fallback)
     Value: !GetAtt OutputSettings.QNAITEM_LAMBDAHOOK_ARGS
+
+  StreamingEnabled:
+    Description: Streaming enabled (use for QnABot param "StreamingEnabled")
+    Value: !GetAtt OutputSettings.STREAMING_ENABLED
