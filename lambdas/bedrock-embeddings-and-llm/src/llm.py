@@ -22,6 +22,7 @@ def get_bedrock_client():
 
 def get_request_body(modelId, parameters, prompt):
     provider = modelId.split(".")[0]
+    print('provider is : ' ,provider)
     request_body = None
     if provider == "anthropic":
         # claude-3 models use new messages format
@@ -131,7 +132,7 @@ def call_llm(parameters, prompt, event):
     
     fullreply = '';
 
-    if STREAMING_ENABLED and (hasattr(sessionAttributes, 'streamingDynamoDbTable') and hasattr(sessionAttributes, 'streamingEndpoint')):
+    if STREAMING_ENABLED and ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingDynamoDbTable' in sessionAttributes) :
         apigatewaymanagementapi = boto3.client(
             'apigatewaymanagementapi', 
             endpoint_url = sessionAttributes['streamingEndpoint']
@@ -144,7 +145,7 @@ def call_llm(parameters, prompt, event):
         print('Get ConnectionID ', connectionId)
 
         response = bedrock_client.invoke_model_with_response_stream(
-            body=body, modelId=modelId, accept=accept, contentType=contentType
+            body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType
         )
         stream = response.get('body')
 
@@ -168,7 +169,7 @@ def call_llm(parameters, prompt, event):
     
         return close(event, fulfillment_state, message)
     else:
-        response = bedrock_client.invoke_model(body=body, modelId=modelId, accept=accept, contentType=contentType)
+        response = bedrock_client.invoke_model(body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType)
         generated_text = get_generate_text(modelId, response)
         return generated_text
 
@@ -187,6 +188,7 @@ For supported parameters for each provider model, see Bedrock docs: https://us-e
 """
 def lambda_handler(event, context):
     print("Event: ", json.dumps(event))
+    print("Context: ",context)
     prompt = event["prompt"]
     
     parameters = event["parameters"] 

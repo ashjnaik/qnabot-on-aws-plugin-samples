@@ -117,8 +117,7 @@ def get_llm_response(modelId, parameters, prompt):
     print("ModelId", modelId, "-  Body: ", body)
     if (client is None):
         client = get_client()
-
-    response = client.invoke_model(body=body, modelId=modelId, accept='application/json', contentType='application/json')
+    response = client.invoke_model(body=json.dumps(body), modelId=modelId, accept='application/json', contentType='application/json')
     generated_text = get_generate_text(modelId, response)
     return generated_text
 
