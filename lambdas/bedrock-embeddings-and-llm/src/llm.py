@@ -7,7 +7,7 @@ DEFAULT_MODEL_ID = os.environ.get("DEFAULT_MODEL_ID","anthropic.claude-instant-v
 AWS_REGION = os.environ["AWS_REGION_OVERRIDE"] if "AWS_REGION_OVERRIDE" in os.environ else os.environ["AWS_REGION"]
 ENDPOINT_URL = os.environ.get("ENDPOINT_URL", f'https://bedrock-runtime.{AWS_REGION}.amazonaws.com')
 DEFAULT_MAX_TOKENS = 256
-STREAMING_ENABLED = os.environ["STREAMING_ENABLED"]
+STREAMING_ENABLED = os.environ["STREAMING_ENABLED"] if "STREAMING_ENABLED" in os.environ else "false"
 accept = "application/json"
 contentType = "application/json"
 
@@ -188,7 +188,6 @@ For supported parameters for each provider model, see Bedrock docs: https://us-e
 """
 def lambda_handler(event, context):
     print("Event: ", json.dumps(event))
-    print("Context: ",context)
     prompt = event["prompt"]
     
     parameters = event["parameters"] 
