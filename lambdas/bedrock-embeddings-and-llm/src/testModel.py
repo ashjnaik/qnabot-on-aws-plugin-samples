@@ -39,7 +39,7 @@ def lambda_handler(event, context):
                 "temperature": 0
             }
             print(f"Testing {modelId}")
-            llm.call_llm(parameters, prompt)            
+            llm.call_llm(parameters, prompt)
         except Exception as e:
             status = cfnresponse.FAILED
             reason = f"Exception thrown testing ModelId='{modelId}'. Check that Amazon Bedrock is available in your region, and that models ('{embeddingsModelId}' and '{llmModelId}') are activated in your Amazon Bedrock account - {e}"

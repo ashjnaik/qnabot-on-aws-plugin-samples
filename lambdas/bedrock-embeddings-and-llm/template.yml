@@ -4,16 +4,23 @@ Description: QnABot on AWS LLM Plugin for Bedrock - v0.1.15
 Metadata:
   'AWS::CloudFormation::Interface':
     ParameterGroups:
-      - Label:
-          default: 'Streaming Configuration'
-        Parameters:
-          - StreamingDynamoDbTable
-          - StreamingWebSocketEndpointId
+    - Label: # label for other configuration groups
+        default: 'Model Configuration'
+      Parameters:
+        - EmbeddingsModelId
+        - LLMModelId
+    - Label:
+        default: 'Streaming Configuration - optional - if the AllowStreamingResponses parameter was set in the LexWebUI stack, set both the parameters below'
+      Parameters:
+        - StreamingDynamoDbTable
+        - StreamingWebSocketEndpointId
+      
     ParameterLabels:
       StreamingDynamoDbTable:
-        default: 'DynamoDB Table name for streaming data from the LexWebUI stack'
+        default: 'DynamoTableName'
       StreamingWebSocketEndpointId:
-        default: 'WebSocket Endpoint connectionID from the Lex Web UI stack'
+        default: 'WebSocketEndpoint API ID'
+        
 
 Parameters:
   EmbeddingsModelId:
@@ -44,12 +51,12 @@ Parameters:
   StreamingDynamoDbTable:
     Type: String
     Default: ""
-    Description: The name of the DynamoDB table for streaming data from the LexWebUI stack if the 'AllowStreamingResponses' parameter was set
+    Description: DynamoDB table for streaming data from the LexWebUI stack 
 
   StreamingWebSocketEndpointId:
     Type: String
     Default: ""
-    Description: The connection ID of the API Gateway WebSocket for streaming from the LexWebUI stack if the 'AllowStreaming' parameter was set
+    Description: The API Gateway ID (apiId) from the stack output WebSocketId in the Lex UI - CodeBuildDeploy stack
 
 Conditions:
   StreamingEnabled:

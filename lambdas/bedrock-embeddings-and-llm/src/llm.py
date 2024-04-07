@@ -117,7 +117,25 @@ def get_generate_text(modelId, response):
         raise Exception("Unsupported provider: ", provider)
     return generated_text
 
-def call_llm(parameters, prompt, event):
+def call_llm(parameters, prompt):
+    global bedrock_client
+
+    modelId = parameters.pop("modelId", DEFAULT_MODEL_ID)
+    body = get_request_body(modelId, parameters, prompt)
+    print("ModelId", modelId, "-  Body: ", body)
+
+    if (bedrock_client is None):
+        bedrock_client = get_bedrock_client()
+
+    response = bedrock_client.invoke_model(
+        body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType
+    )
+    print("Response: ", response)
+    generated_text = get_generate_text(modelId, response)
+    return generated_text
+ 
+
+def call_llm_streaming(parameters, prompt, event):
     global bedrock_client
 
     sessionId = event['sessionId']
@@ -132,7 +150,7 @@ def call_llm(parameters, prompt, event):
     
     fullreply = '';
 
-    if STREAMING_ENABLED and ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingDynamoDbTable' in sessionAttributes) :
+    if STREAMING_ENABLED and ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingEndpoint' in sessionAttributes) :
         apigatewaymanagementapi = boto3.client(
             'apigatewaymanagementapi', 
             endpoint_url = sessionAttributes['streamingEndpoint']
@@ -191,7 +209,11 @@ def lambda_handler(event, context):
     prompt = event["prompt"]
     
     parameters = event["parameters"] 
-    generated_text = call_llm(parameters, prompt, event)
+
+    if STREAMING_ENABLED == "true":
+        generated_text = call_llm_streaming(parameters, prompt, event)
+    else: 
+        generated_text = call_llm(parameters, prompt, event)
     print("Result:", json.dumps(generated_text))
     return {
         'generated_text': generated_text
