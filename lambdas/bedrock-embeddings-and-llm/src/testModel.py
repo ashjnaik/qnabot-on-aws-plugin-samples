@@ -26,7 +26,7 @@ def lambda_handler(event, context):
         try:
             embeddingsModelId = event['ResourceProperties'].get('EmbeddingsModelId', '')
             llmModelId = event['ResourceProperties'].get('LLMModelId', '')
-            client = llm.get_client()
+            client = llm.get_bedrock_client()
             # Test EmbeddingsModel
             modelId = embeddingsModelId        
             body = json.dumps({"inputText": prompt})

@@ -8,10 +8,10 @@ Metadata:
           default: 'Streaming Configuration'
         Parameters:
           - StreamingDynamoDbTable
-          - StreamingWebSocketEndpoint
+          - StreamingWebSocketEndpointId
     ParameterLabels:
       StreamingDynamoDbTable:
-        default: 'The name of the DynamoDB table for streaming data from the LexWebUI stack'
+        default: 'DynamoDB Table name for streaming data from the LexWebUI stack'
       StreamingWebSocketEndpointId:
         default: 'WebSocket Endpoint connectionID from the Lex Web UI stack'
 
@@ -400,7 +400,6 @@ Resources:
       LLMModelId: !Ref LLMModelId
 
 Outputs:
-
   BedrockBoto3Layer:
     Description: Lambda layer for Boto3 Bedrock SDK extensions
     Value: !Ref BedrockBoto3Layer
@@ -452,7 +451,3 @@ Outputs:
   QnAItemLambdaHookArgs:
     Description: QnA Item Lambda Hook Args (use with no_hits item for optional ask-the-LLM fallback)
     Value: !GetAtt OutputSettings.QNAITEM_LAMBDAHOOK_ARGS
-
-  StreamingEnabled:
-    Description: Streaming enabled (use for QnABot param "StreamingEnabled")
-    Value: !GetAtt OutputSettings.STREAMING_ENABLED
