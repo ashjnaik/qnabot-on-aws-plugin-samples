@@ -7,7 +7,6 @@ DEFAULT_MODEL_ID = os.environ.get("DEFAULT_MODEL_ID","anthropic.claude-instant-v
 AWS_REGION = os.environ["AWS_REGION_OVERRIDE"] if "AWS_REGION_OVERRIDE" in os.environ else os.environ["AWS_REGION"]
 ENDPOINT_URL = os.environ.get("ENDPOINT_URL", f'https://bedrock-runtime.{AWS_REGION}.amazonaws.com')
 DEFAULT_MAX_TOKENS = 256
-STREAMING_ENABLED = os.environ["STREAMING_ENABLED"] if "STREAMING_ENABLED" in os.environ else "false"
 accept = "application/json"
 contentType = "application/json"
 
@@ -150,7 +149,7 @@ def call_llm_streaming(parameters, prompt, event):
     
     fullreply = '';
 
-    if STREAMING_ENABLED and ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingEndpoint' in sessionAttributes) :
+    if ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingEndpoint' in sessionAttributes) :
         apigatewaymanagementapi = boto3.client(
             'apigatewaymanagementapi', 
             endpoint_url = sessionAttributes['streamingEndpoint']
@@ -158,7 +157,7 @@ def call_llm_streaming(parameters, prompt, event):
             
         wstable = dynamodb_client.Table(sessionAttributes['streamingDynamoDbTable'])
         db_response = wstable.get_item(Key={'sessionId': sessionId})
-        print (db_response)
+        #print (db_response)
         connectionId = db_response['Item']['connectionId']
         print('Get ConnectionID ', connectionId)
 
@@ -191,6 +190,18 @@ def call_llm_streaming(parameters, prompt, event):
         generated_text = get_generate_text(modelId, response)
         return generated_text
 
+# Function to check if streaming is enabled based on the presence of sessionId, and then by session attributes.
+def is_streaming_enabled(event):
+    #if sessionId is present in the event
+    has_session_id = 'sessionId' in event
+    if not has_session_id:
+        return False  # Early exit if no sessionId
+    
+    # Proceeding to extract the session attributes since sessionId exists
+    session_attributes = get_session_attributes(event)
+    streaming_enabled = 'streamingDynamoDbTable' in session_attributes and 'streamingEndpoint' in session_attributes
+
+    return streaming_enabled
 
 """
 Example Test Event:
@@ -210,7 +221,7 @@ def lambda_handler(event, context):
     
     parameters = event["parameters"] 
 
-    if STREAMING_ENABLED == "true":
+    if(is_streaming_enabled(event)):
         generated_text = call_llm_streaming(parameters, prompt, event)
     else: 
         generated_text = call_llm(parameters, prompt, event)

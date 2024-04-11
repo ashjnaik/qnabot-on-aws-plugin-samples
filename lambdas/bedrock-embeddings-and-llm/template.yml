@@ -1,26 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: QnABot on AWS LLM Plugin for Bedrock - v0.1.15
-
-Metadata:
-  'AWS::CloudFormation::Interface':
-    ParameterGroups:
-    - Label: # label for other configuration groups
-        default: 'Model Configuration'
-      Parameters:
-        - EmbeddingsModelId
-        - LLMModelId
-    - Label:
-        default: 'Streaming Configuration - optional - if the AllowStreamingResponses parameter was set in the LexWebUI stack, set both the parameters below'
-      Parameters:
-        - StreamingDynamoDbTable
-        - StreamingWebSocketEndpointId
-      
-    ParameterLabels:
-      StreamingDynamoDbTable:
-        default: 'DynamoTableName'
-      StreamingWebSocketEndpointId:
-        default: 'WebSocketEndpoint API ID'
-        
+       
 
 Parameters:
   EmbeddingsModelId:
@@ -47,36 +27,6 @@ Parameters:
       - meta.llama2-13b-chat-v1
       - meta.llama2-70b-chat-v1
     Description: Bedrock LLM ModelId
-  
-  StreamingDynamoDbTable:
-    Type: String
-    Default: ""
-    Description: DynamoDB table for streaming data from the LexWebUI stack 
-
-  StreamingWebSocketEndpointId:
-    Type: String
-    Default: ""
-    Description: The API Gateway ID (apiId) from the stack output WebSocketId in the Lex UI - CodeBuildDeploy stack
-
-Conditions:
-  StreamingEnabled:
-    Fn::Or:
-      - Fn::And:
-          - Fn::Not:
-              - Fn::Equals:
-                  - Ref: StreamingDynamoDbTable
-                  - ""
-          - Fn::Not:
-              - Fn::Equals:
-                  - Ref: StreamingWebSocketEndpointId
-                  - ""
-      - Fn::And:
-        - Fn::Equals:
-          - Ref: StreamingDynamoDbTable
-          - ""
-        - Fn::Equals:
-              - Ref: StreamingWebSocketEndpointId
-              - ""
 
 Resources:
   BedrockBoto3Bucket:
@@ -261,7 +211,7 @@ Resources:
                   - "dynamodb:GetItem"
                   - "dynamodb:Describe*"
                   - "dynamodb:List*"
-                Resource: !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${StreamingDynamoDbTable}"
+                Resource: !Sub "arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/*Streaming-API"
           PolicyName: DynamoDBPolicy
         - PolicyDocument: 
             Version: '2012-10-17'
@@ -271,9 +221,9 @@ Resources:
                   - "execute-api:ManageConnections"
                   - "execute-api:Invoke"
                 Resource: 
-                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/*"
-                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/Prod/POST/@connections/*"
-                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${StreamingWebSocketEndpointId}/Prod/GET/@connections/*"
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*Streaming-API*/*"
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*Streaming-API*/Prod/POST/@connections/*"
+                  - !Sub "arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:*Streaming-API*/Prod/GET/@connections/*"
           PolicyName: WebSocketPolicy    
 
   EmbeddingsLambdaFunction:
@@ -309,9 +259,6 @@ Resources:
         - !Ref BedrockBoto3Layer
       Timeout: 60
       MemorySize: 128
-      Environment:
-        Variables:
-          STREAMING_ENABLED: !If [StreamingEnabled, "true", "false"]
       Code: ./src
     Metadata:
       cfn_nag:
