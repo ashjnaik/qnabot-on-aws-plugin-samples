@@ -224,7 +224,7 @@ def lambda_handler(event, context):
     if(is_streaming_enabled(event)):
         generated_text = call_llm_streaming(parameters, prompt, event)
     else: 
-        generated_text = call_llm(parameters, prompt, event)
+        generated_text = call_llm(parameters, prompt)
     print("Result:", json.dumps(generated_text))
     return {
         'generated_text': generated_text
