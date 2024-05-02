@@ -7,17 +7,21 @@ DEFAULT_MODEL_ID = os.environ.get("DEFAULT_MODEL_ID","anthropic.claude-instant-v
 AWS_REGION = os.environ["AWS_REGION_OVERRIDE"] if "AWS_REGION_OVERRIDE" in os.environ else os.environ["AWS_REGION"]
 ENDPOINT_URL = os.environ.get("ENDPOINT_URL", f'https://bedrock-runtime.{AWS_REGION}.amazonaws.com')
 DEFAULT_MAX_TOKENS = 256
+accept = "application/json"
+contentType = "application/json"
 
 # global variables - avoid creating a new client for every request
-client = None
+bedrock_client = None
+dynamodb_client = boto3.resource('dynamodb')
 
-def get_client():
+def get_bedrock_client():
     print("Connecting to Bedrock Service: ", ENDPOINT_URL)
     client = boto3.client(service_name='bedrock-runtime', region_name=AWS_REGION, endpoint_url=ENDPOINT_URL)
     return client
 
 def get_request_body(modelId, parameters, prompt):
     provider = modelId.split(".")[0]
+    print('provider is : ' ,provider)
     request_body = None
     if provider == "anthropic":
         # claude-3 models use new messages format
@@ -65,6 +69,30 @@ def get_request_body(modelId, parameters, prompt):
         raise Exception("Unsupported provider: ", provider)
     return request_body
 
+def close(intent_request, fulfillment_state, message):
+    intent_request['sessionState']['intent']['state'] = fulfillment_state
+
+    return {
+        'sessionState': {
+            'dialogAction': {
+                'type': 'Close'
+            },
+            'intent': intent_request['sessionState']['intent']
+        },
+        'messages': [message],
+        'sessionId': intent_request['sessionId'],
+        'requestAttributes': intent_request['requestAttributes'] if 'requestAttributes' in intent_request else None
+    }
+
+def get_session_attributes(intent_request):
+    print(intent_request)
+    sessionState = intent_request['sessionState']
+    if 'sessionAttributes' in sessionState:
+        print('Session Attributes', sessionState['sessionAttributes'])
+        return sessionState['sessionAttributes']
+
+    return {}
+
 def get_generate_text(modelId, response):
     provider = modelId.split(".")[0]
     generated_text = None
@@ -89,16 +117,91 @@ def get_generate_text(modelId, response):
     return generated_text
 
 def call_llm(parameters, prompt):
-    global client
+    global bedrock_client
+
     modelId = parameters.pop("modelId", DEFAULT_MODEL_ID)
     body = get_request_body(modelId, parameters, prompt)
     print("ModelId", modelId, "-  Body: ", body)
-    if (client is None):
-        client = get_client()
-    response = client.invoke_model(body=json.dumps(body), modelId=modelId, accept='application/json', contentType='application/json')
+
+    if (bedrock_client is None):
+        bedrock_client = get_bedrock_client()
+
+    response = bedrock_client.invoke_model(
+        body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType
+    )
+    print("Response: ", response)
     generated_text = get_generate_text(modelId, response)
     return generated_text
+ 
 
+def call_llm_streaming(parameters, prompt, event):
+    global bedrock_client
+
+    sessionId = event['sessionId']
+    sessionAttributes = get_session_attributes(event)
+
+    modelId = parameters.pop("modelId", DEFAULT_MODEL_ID)
+    body = get_request_body(modelId, parameters, prompt)
+    print("ModelId", modelId, "-  Body: ", body)
+    
+    if (bedrock_client is None):
+        bedrock_client = get_bedrock_client()
+    
+    fullreply = '';
+
+    if ( 'streamingDynamoDbTable' in sessionAttributes) and ('streamingEndpoint' in sessionAttributes) :
+        apigatewaymanagementapi = boto3.client(
+            'apigatewaymanagementapi', 
+            endpoint_url = sessionAttributes['streamingEndpoint']
+        )
+            
+        wstable = dynamodb_client.Table(sessionAttributes['streamingDynamoDbTable'])
+        db_response = wstable.get_item(Key={'sessionId': sessionId})
+        #print (db_response)
+        connectionId = db_response['Item']['connectionId']
+        print('Get ConnectionID ', connectionId)
+
+        response = bedrock_client.invoke_model_with_response_stream(
+            body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType
+        )
+        stream = response.get('body')
+
+        if stream:
+            for streamEvent in stream:
+                chunk = streamEvent.get('chunk')
+                if chunk:
+                    chunk_obj = json.loads(chunk.get('bytes').decode())
+                    text = chunk_obj['completion']
+                    fullreply = fullreply + text
+                    print("chunk text sent back to the client: ",text);
+                    response = apigatewaymanagementapi.post_to_connection(
+                        Data=text,
+                        ConnectionId=connectionId)
+                    
+        message = {
+            'contentType': 'CustomPayload',
+            'content': fullreply
+        }
+        fulfillment_state = "Fulfilled"
+    
+        return close(event, fulfillment_state, message)
+    else:
+        response = bedrock_client.invoke_model(body=json.dumps(body), modelId=modelId, accept=accept, contentType=contentType)
+        generated_text = get_generate_text(modelId, response)
+        return generated_text
+
+# Function to check if streaming is enabled based on the presence of sessionId, and then by session attributes.
+def is_streaming_enabled(event):
+    #if sessionId is present in the event
+    has_session_id = 'sessionId' in event
+    if not has_session_id:
+        return False  # Early exit if no sessionId
+    
+    # Proceeding to extract the session attributes since sessionId exists
+    session_attributes = get_session_attributes(event)
+    streaming_enabled = 'streamingDynamoDbTable' in session_attributes and 'streamingEndpoint' in session_attributes
+
+    return streaming_enabled
 
 """
 Example Test Event:
@@ -115,8 +218,13 @@ For supported parameters for each provider model, see Bedrock docs: https://us-e
 def lambda_handler(event, context):
     print("Event: ", json.dumps(event))
     prompt = event["prompt"]
+    
     parameters = event["parameters"] 
-    generated_text = call_llm(parameters, prompt)
+
+    if(is_streaming_enabled(event)):
+        generated_text = call_llm_streaming(parameters, prompt, event)
+    else: 
+        generated_text = call_llm(parameters, prompt)
     print("Result:", json.dumps(generated_text))
     return {
         'generated_text': generated_text
